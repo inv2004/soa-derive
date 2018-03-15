@@ -1,6 +1,37 @@
 use quote::{Tokens, Ident};
-use syn::Visibility;
+use syn;
 use structs::Struct;
+
+fn gen_zip_type(v: &[&syn::Ty]) -> Tokens {
+    if v.len() >= 2 {
+        let v0 = v[0];
+        let v1 = v[1];
+        return v.iter().skip(2).fold(quote!{iter::Zip<slice::Iter<'a, #v0>,slice::Iter<'a, #v1>>}, |q, &v| {quote!{iter::Zip<#q, slice::Iter<'a, #v>>}} );
+    } else {
+        let v0 = v[0];
+        return quote!{(#v0)};
+    };
+}
+
+fn gen_zip_tuple(v: &[syn::Ident]) -> Tokens {
+    if v.len() >= 2 {
+        let v0 = &v[0];
+        let v1 = &v[1];
+        return v.iter().skip(2).fold(quote!{(#v0,#v1)}, |q, ref v| {quote!{(#q, #v)}} );
+    } else {
+        let v0 = &v[0];
+        return quote!{(#v0)};
+    };
+}
+
+fn gen_zip_iter(v: &[syn::Ident]) -> Tokens {
+    if ! v.is_empty() {
+        let v0 = &v[0];
+        return quote!{#v0.iter()#(.zip(#v.iter()))*};
+    } else {
+        return quote!{};
+    }
+}
 
 pub fn derive(input: &Struct) -> Tokens {
     let name = &input.name;
@@ -25,6 +56,10 @@ pub fn derive(input: &Struct) -> Tokens {
     let fields_types = &input.fields.iter()
                                     .map(|field| &field.ty)
                                     .collect::<Vec<_>>();
+
+    let zip_type = gen_zip_type(fields_types);
+    let zip_tuple = gen_zip_tuple(&fields_names);
+    let zip_iter = gen_zip_iter(&fields_names);
 
     let mut generated = quote! {
         #[allow(non_snake_case, dead_code)]
@@ -123,7 +158,7 @@ pub fn derive(input: &Struct) -> Tokens {
         }
     };
 
-    if let Visibility::Public = *visibility {
+    if let syn::Visibility::Public = *visibility {
         generated.append(quote!{
             impl<'a> IntoIterator for #slice_name<'a> {
                 type Item = #ref_name<'a>;
