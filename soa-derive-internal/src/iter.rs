@@ -6,10 +6,13 @@ fn gen_zip_type(v: &[&syn::Ty]) -> Tokens {
     if v.len() >= 2 {
         let v0 = v[0];
         let v1 = v[1];
-        return v.iter().skip(2).fold(quote!{iter::Zip<slice::Iter<'a, #v0>,slice::Iter<'a, #v1>>}, |q, &v| {quote!{iter::Zip<#q, slice::Iter<'a, #v>>}} );
+        return v.iter().skip(2).fold(
+            quote!{iter::Zip<slice::Iter<'a, #v0>,slice::Iter<'a, #v1>>},
+            |q, v| {quote!{iter::Zip<#q, slice::Iter<'a, #v>>}}
+        );
     } else {
         let v0 = v[0];
-        return quote!{(#v0)};
+        return quote!{slice::Iter<'a, #v0>};
     };
 }
 
@@ -27,7 +30,8 @@ fn gen_zip_tuple(v: &[syn::Ident]) -> Tokens {
 fn gen_zip_iter(v: &[syn::Ident]) -> Tokens {
     if ! v.is_empty() {
         let v0 = &v[0];
-        return quote!{#v0.iter()#(.zip(#v.iter()))*};
+        let v1 = v.iter().skip(1);
+        return quote!{self.#v0.iter()#(.zip(self.#v1.iter()))*};
     } else {
         return quote!{};
     }
@@ -66,6 +70,16 @@ pub fn derive(input: &Struct) -> Tokens {
         mod #detail_mod {
             use super::*;
             use std::slice;
+            use std::iter;
+
+            #visibility struct IterZip<'a>(pub(super) #zip_type);
+
+            impl<'a> Iterator for IterZip<'a> {
+                type Item = #ref_name<'a>;
+                fn next(&mut self) -> Option<#ref_name<'a>> {
+                    self.0.next().and_then(|#zip_tuple| Some(Self::Item{#(#fields_names_1),*}))
+                }
+            }
 
             #visibility struct Iter<'a> {
                 #(pub(super) #fields_names_1: slice::Iter<'a, #fields_types>,)*
@@ -162,12 +176,10 @@ pub fn derive(input: &Struct) -> Tokens {
         generated.append(quote!{
             impl<'a> IntoIterator for #slice_name<'a> {
                 type Item = #ref_name<'a>;
-                type IntoIter = #detail_mod::Iter<'a>;
+                type IntoIter = #detail_mod::IterZip<'a>;
 
                 fn into_iter(self) -> Self::IntoIter {
-                    Self::IntoIter {
-                        #(#fields_names_1: self.#fields_names_2.iter(),)*
-                    }
+                    Self::IntoIter (#zip_iter)
                 }
             }
 
